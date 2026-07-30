@@ -1,0 +1,22 @@
+name: F1 Discord Automation
+
+on:
+  schedule:
+    - cron: '0 8 * * 0,1,5,6'
+  workflow_dispatch:
+
+jobs:
+  run-f1-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica il codice del repo
+        uses: actions/checkout@v3
+
+      - name: Configura Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Esegui lo Script F1
+        run: python bot_f1.py
+        
