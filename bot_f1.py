@@ -8,6 +8,12 @@ import time
 # Webhook Discord configurato
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1532537113785139200/TaM7NFE7zNGCTk_a7I0cEG9IZlKchv_xLSwYsFOrbTKzGdwzA58aeb3S8pwgEJH3ADrR")
 
+MONTHS_IT = {
+    1: 'Gennaio', 2: 'Febbraio', 3: 'Marzo', 4: 'Aprile',
+    5: 'Maggio', 6: 'Giugno', 7: 'Luglio', 8: 'Agosto',
+    9: 'Settembre', 10: 'Ottobre', 11: 'Novembre', 12: 'Dicembre'
+}
+
 def get_json(url):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     req = urllib.request.Request(url, headers=headers)
@@ -39,6 +45,12 @@ def send_discord_embed(payload):
         print(f"Errore nell'invio a Discord: {e}")
         sys.exit(1)
 
+def format_date_range(start_date, end_date):
+    if start_date.month == end_date.month:
+        return f"dal {start_date.day} al {end_date.day} {MONTHS_IT[end_date.month]} {end_date.year}"
+    else:
+        return f"dal {start_date.day} {MONTHS_IT[start_date.month]} al {end_date.day} {MONTHS_IT[end_date.month]} {end_date.year}"
+
 def main():
     today = datetime.date.today()
     monday = today - datetime.timedelta(days=today.weekday())
@@ -46,7 +58,6 @@ def main():
 
     print(f"Verifica calendario F1 per la settimana: {monday} -> {sunday}")
 
-    # API Jolpica corretta (api.jolpi.ca)
     urls_to_try = [
         "https://api.jolpi.ca/ergast/f1/current.json",
         f"https://api.jolpi.ca/ergast/f1/{today.year}.json"
@@ -66,16 +77,65 @@ def main():
     races = schedule_data['MRData']['RaceTable']['Races']
 
     current_race = None
+    next_race = None
+
     for race in races:
         race_date = datetime.datetime.strptime(race['date'], "%Y-%m-%d").date()
         if monday <= race_date <= sunday:
             current_race = race
             break
+        elif race_date > today and next_race is None:
+            next_race = race
 
+    # CASE 1: NESSUN GRAN PREMIO QUESTA SETTIMANA -> COUNTDOWN PROSSIMA GARA
     if not current_race:
-        print("Nessun Gran Premio previsto per questa settimana. Nessun messaggio inviato.")
-        sys.exit(0)
+        print("Nessun Gran Premio questa settimana. Ricerca prossimo Gran Premio...")
+        
+        if not next_race:
+            for race in races:
+                race_date = datetime.datetime.strptime(race['date'], "%Y-%m-%d").date()
+                if race_date > today:
+                    next_race = race
+                    break
 
+        if next_race:
+            race_name = next_race['raceName']
+            circuit = next_race['Circuit']['circuitName']
+            country = next_race['Circuit']['Location']['country']
+            sunday_date = datetime.datetime.strptime(next_race['date'], "%Y-%m-%d").date()
+            
+            # Determinazione data di inizio (FP1 se presente, altrimenti venerdì)
+            if 'FirstPractice' in next_race and 'date' in next_race['FirstPractice']:
+                start_date = datetime.datetime.strptime(next_race['FirstPractice']['date'], "%Y-%m-%d").date()
+            else:
+                start_date = sunday_date - datetime.timedelta(days=2)
+            
+            days_left = (start_date - today).days
+            date_range_str = format_date_range(start_date, sunday_date)
+
+            payload = {
+                "username": "F1 Race Control",
+                "avatar_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/F1.svg/512px-F1.svg.png",
+                "embeds": [{
+                    "title": "💤 Nessuna gara questa settimana",
+                    "description": (
+                        f"Questa settimana la Formula 1 è in pausa.\n\n"
+                        f"🏁 **Prossimo Gran Premio:** {race_name}\n"
+                        f"📍 **Circuito:** {circuit} ({country})\n"
+                        f"📅 **Date:** {date_range_str}\n"
+                        f"⏳ **Countdown:** Mancano **{days_left} giorni** all'inizio del weekend di gara!"
+                    ),
+                    "color": 3447003, # Azzurro
+                    "footer": {"text": "F1 Live Automation System"}
+                }]
+            }
+            send_discord_embed(payload)
+            sys.exit(0)
+        else:
+            print("Nessuna ulteriore gara trovata in calendario per questa stagione.")
+            sys.exit(0)
+
+    # CASE 2: C'È UNA GARA QUESTA SETTIMANA
     race_name = current_race['raceName']
     circuit = current_race['Circuit']['circuitName']
     country = current_race['Circuit']['Location']['country']
@@ -157,4 +217,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+    
