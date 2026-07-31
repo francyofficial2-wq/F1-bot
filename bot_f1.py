@@ -4,35 +4,57 @@ import datetime
 import os
 import sys
 
-# Inserto qui il tuo Webhook URL di Discord (oppure impostalo tra le Secret di GitHub)
+# Webhook Discord configurato
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1532537113785139200/TaM7NFE7zNGCTk_a7I0cEG9IZlKchv_xLSwYsFOrbTKzGdwzA58aeb3S8pwgEJH3ADrR")
+
 def get_json(url):
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req) as response:
+    with urllib.request.urlopen(req, timeout=10) as response:
         return json.loads(response.read().decode('utf-8'))
 
 def send_discord_embed(payload):
+    if not WEBHOOK_URL.startswith("https://discord"):
+        print("ERRORE CRITICO: URL Webhook Discord non valido!")
+        sys.exit(1)
+        
     req = urllib.request.Request(
         WEBHOOK_URL,
         data=json.dumps(payload).encode('utf-8'),
         headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             print("Messaggio inviato con successo a Discord!")
     except Exception as e:
         print(f"Errore nell'invio a Discord: {e}")
+        sys.exit(1)
 
 def main():
     today = datetime.date.today()
-    # Calcola il lunedì e la domenica della settimana corrente
     monday = today - datetime.timedelta(days=today.weekday())
     sunday = monday + datetime.timedelta(days=6)
 
     print(f"Verifica calendario F1 per la settimana: {monday} -> {sunday}")
 
-    # 1. Recupera il calendario F1 della stagione corrente
-    schedule_data = get_json("https://api.jolpica.net/ergast/f1/current.json")
+    # Tenta di scaricare il calendario F1 con server di riserva
+    schedule_data = None
+    urls_to_try = [
+        "https://api.jolpica.net/ergast/f1/current.json",
+        "https://ergast.com/api/f1/current.json"
+    ]
+    
+    for url in urls_to_try:
+        try:
+            print(f"Connessione a: {url}")
+            schedule_data = get_json(url)
+            break
+        except Exception as e:
+            print(f"Impossibile raggiungere {url}: {e}")
+
+    if not schedule_data:
+        print("ERRORE: Impossibile recuperare i dati del calendario F1.")
+        sys.exit(1)
+
     races = schedule_data['MRData']['RaceTable']['Races']
 
     current_race = None
@@ -42,7 +64,6 @@ def main():
             current_race = race
             break
 
-    # FILTRO FONDAMENTALE: Se non c'è una gara questa settimana, lo script si ferma.
     if not current_race:
         print("Nessun Gran Premio previsto per questa settimana. Nessun messaggio inviato.")
         sys.exit(0)
@@ -50,9 +71,11 @@ def main():
     race_name = current_race['raceName']
     circuit = current_race['Circuit']['circuitName']
     country = current_race['Circuit']['Location']['country']
-    day_of_week = today.weekday() # 0 = Lunedì, 4 = Venerdì, 5 = Sabato, 6 = Domenica
+    day_of_week = today.weekday()
 
-    # 2. LUNEDÌ: Message "RACE WEEK" + Orari
+    print(f"Trovata gara questa settimana: {race_name} in {country}")
+
+    # LUNEDÌ: Race Week + Orari
     if day_of_week == 0:
         fields = []
         sessions = [
@@ -70,7 +93,6 @@ def main():
                 s_time = current_race[key].get('time', '').replace('Z', ' UTC')
                 fields.append({"name": label, "value": f"📅 {s_date} — ⏰ {s_time}", "inline": True})
 
-        # Aggiungi orario della Gara
         race_time = current_race.get('time', '').replace('Z', ' UTC')
         fields.append({"name": "🏁 GARA", "value": f"📅 {current_race['date']} — ⏰ {race_time}", "inline": False})
 
@@ -87,13 +109,26 @@ def main():
         }
         send_discord_embed(payload)
 
-    # 3. VENERDÌ / SABATO / DOMENICA: Risultati sessioni
+    # VENERDÌ, SABATO, DOMENICA: Risultati
     elif day_of_week in [4, 5, 6]:
-        # Recupera l'ultimo risultato disponibile
-        results_data = get_json("https://api.jolpica.net/ergast/f1/current/last/results.json")
-        race_res = results_data['MRData']['RaceTable']['Races'][0]
+        results_data = None
+        results_urls = [
+            "https://api.jolpica.net/ergast/f1/current/last/results.json",
+            "https://ergast.com/api/f1/current/last/results.json"
+        ]
+        for r_url in results_urls:
+            try:
+                results_data = get_json(r_url)
+                break
+            except Exception as e:
+                print(f"Impossibile recuperare i risultati da {r_url}: {e}")
         
-        results_list = race_res['Results'][:5] # Top 5
+        if not results_data or not results_data['MRData']['RaceTable']['Races']:
+            print("Nessun risultato ancora disponibile per la sessione.")
+            sys.exit(0)
+
+        race_res = results_data['MRData']['RaceTable']['Races'][0]
+        results_list = race_res['Results'][:5]
         lines = []
         pos_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
         
@@ -116,4 +151,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-      
+    
