@@ -12,7 +12,6 @@ def get_json(url):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     req = urllib.request.Request(url, headers=headers)
     
-    # Riprova fino a 3 volte in caso di micro-interruzione DNS/rete
     for attempt in range(1, 4):
         try:
             with urllib.request.urlopen(req, timeout=15) as response:
@@ -20,7 +19,7 @@ def get_json(url):
         except Exception as e:
             print(f"Tentativo {attempt}/3 fallito per {url}: {e}")
             if attempt < 3:
-                time.sleep(3)
+                time.sleep(2)
     return None
 
 def send_discord_embed(payload):
@@ -47,9 +46,10 @@ def main():
 
     print(f"Verifica calendario F1 per la settimana: {monday} -> {sunday}")
 
+    # API Jolpica corretta (api.jolpi.ca)
     urls_to_try = [
-        "https://api.jolpica.net/ergast/f1/current.json",
-        f"https://api.jolpica.net/ergast/f1/{today.year}.json"
+        "https://api.jolpi.ca/ergast/f1/current.json",
+        f"https://api.jolpi.ca/ergast/f1/{today.year}.json"
     ]
     
     schedule_data = None
@@ -60,7 +60,7 @@ def main():
             break
 
     if not schedule_data:
-        print("ERRORE: Impossibile recuperare i dati del calendario F1 dopo tutti i tentativi.")
+        print("ERRORE: Impossibile recuperare i dati del calendario F1.")
         sys.exit(1)
 
     races = schedule_data['MRData']['RaceTable']['Races']
@@ -120,8 +120,8 @@ def main():
     # VENERDÌ, SABATO, DOMENICA: Risultati
     elif day_of_week in [4, 5, 6]:
         results_urls = [
-            "https://api.jolpica.net/ergast/f1/current/last/results.json",
-            f"https://api.jolpica.net/ergast/f1/{today.year}/last/results.json"
+            "https://api.jolpi.ca/ergast/f1/current/last/results.json",
+            f"https://api.jolpi.ca/ergast/f1/{today.year}/last/results.json"
         ]
         results_data = None
         for r_url in results_urls:
@@ -157,4 +157,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
