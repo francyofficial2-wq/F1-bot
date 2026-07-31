@@ -3,14 +3,25 @@ import json
 import datetime
 import os
 import sys
+import time
 
 # Webhook Discord configurato
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1532537113785139200/TaM7NFE7zNGCTk_a7I0cEG9IZlKchv_xLSwYsFOrbTKzGdwzA58aeb3S8pwgEJH3ADrR")
 
 def get_json(url):
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=10) as response:
-        return json.loads(response.read().decode('utf-8'))
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    req = urllib.request.Request(url, headers=headers)
+    
+    # Riprova fino a 3 volte in caso di micro-interruzione DNS/rete
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            print(f"Tentativo {attempt}/3 fallito per {url}: {e}")
+            if attempt < 3:
+                time.sleep(3)
+    return None
 
 def send_discord_embed(payload):
     if not WEBHOOK_URL.startswith("https://discord"):
@@ -36,23 +47,20 @@ def main():
 
     print(f"Verifica calendario F1 per la settimana: {monday} -> {sunday}")
 
-    # Tenta di scaricare il calendario F1 con server di riserva
-    schedule_data = None
     urls_to_try = [
         "https://api.jolpica.net/ergast/f1/current.json",
-        "https://ergast.com/api/f1/current.json"
+        f"https://api.jolpica.net/ergast/f1/{today.year}.json"
     ]
     
+    schedule_data = None
     for url in urls_to_try:
-        try:
-            print(f"Connessione a: {url}")
-            schedule_data = get_json(url)
+        print(f"Connessione a: {url}")
+        schedule_data = get_json(url)
+        if schedule_data:
             break
-        except Exception as e:
-            print(f"Impossibile raggiungere {url}: {e}")
 
     if not schedule_data:
-        print("ERRORE: Impossibile recuperare i dati del calendario F1.")
+        print("ERRORE: Impossibile recuperare i dati del calendario F1 dopo tutti i tentativi.")
         sys.exit(1)
 
     races = schedule_data['MRData']['RaceTable']['Races']
@@ -111,17 +119,15 @@ def main():
 
     # VENERDÌ, SABATO, DOMENICA: Risultati
     elif day_of_week in [4, 5, 6]:
-        results_data = None
         results_urls = [
             "https://api.jolpica.net/ergast/f1/current/last/results.json",
-            "https://ergast.com/api/f1/current/last/results.json"
+            f"https://api.jolpica.net/ergast/f1/{today.year}/last/results.json"
         ]
+        results_data = None
         for r_url in results_urls:
-            try:
-                results_data = get_json(r_url)
+            results_data = get_json(r_url)
+            if results_data:
                 break
-            except Exception as e:
-                print(f"Impossibile recuperare i risultati da {r_url}: {e}")
         
         if not results_data or not results_data['MRData']['RaceTable']['Races']:
             print("Nessun risultato ancora disponibile per la sessione.")
